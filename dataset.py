@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def make_moons(n_samples=1000, noise=0.1):
+def make_moons(n_samples=100000000, noise=0.1):
     n = n_samples // 2
 
     theta = np.random.rand(n) * np.pi

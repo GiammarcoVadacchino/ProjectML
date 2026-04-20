@@ -1,23 +1,59 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import time
-import dataset.dataset as data
-import models.linear as linear
+import dataset as data
+import models as models
 import models.SVM as svm
-import kernels.kernels as kernel
+import kernels as kernel
+from sklearn.datasets import fetch_covtype
+
 
 
 def accuracy(y_true, y_pred):
     return np.mean(y_true == y_pred)
 
 def run_experiment(D_values):
-    X, y = data.make_moons(n_samples=2000, noise=0.2)
+    dataset = fetch_covtype()
+    X, y = dataset.data, dataset.target 
+
+    """
+
+    500K samples: 
+
+    - Linear model: acc = 0.309  time = 26s
+    - SVM rbf kernel: acc = 0.364 time = 689s
+    - Linear model with RFF: 
+        - D = 10: acc = 0.364??  time = 6s
+        - D = 50: acc = ??  time = 26s
+        - D = 100: acc = ??  time = 42s
+        - D = 500: acc = ??  time = 280s
+        - D = 1000: acc = ??  time = 887s
+
+
+    400K samples:
+
+    - Linear model: acc = 0.309  time = 13s
+    - SVM rbf kernel: acc = 0.364 time = 439s
+    - Linear model with RFF: 
+        - D = 10: acc = 0.364??  time = 4s
+        - D = 50: acc = ??  time = 16s
+        - D = 100: acc = ??  time = 31s
+        - D = 500: acc = ??  time = 146s
+        - D = 1000: acc = ??  time = 271s
+    
+    """
+
+    idx = np.random.choice(len(X),400_000, replace=False)
+    X, y = X[idx], y[idx]
+    
+    print(f"Input size: {X.shape}\n Output size: {y.shape}") 
+    print(f"X : {X}\n y: {y}") 
     X_train, X_test, y_train, y_test = data.train_test_split(X, y)
     X_train, X_test = data.standardize(X_train, X_test)
 
     # ---- Linear ----
     t0 = time.time()
-    lin = linear.LogisticRegression()
+    lin = models.LogisticRegression()
     lin.fit(X_train, y_train)
     t1 = time.time()
 
@@ -43,7 +79,7 @@ def run_experiment(D_values):
         Z_train = rff.fit_transform(X_train)
         Z_test = rff.transform(X_test)
 
-        model = linear.LogisticRegression()
+        model = models.LogisticRegression()
         model.fit(Z_train, y_train)
 
         t1 = time.time()
