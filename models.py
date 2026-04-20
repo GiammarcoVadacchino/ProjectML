@@ -113,34 +113,64 @@ class RFFLogisticRegression:
     
 
 
-class LinearSVM:
-    def __init__(self, lr=0.01, epochs=1000, C=1.0):
+class KernelSVM:
+    def __init__(self, lr=1e-3, epochs=1000, C=1.0, gamma=1.0):
         self.lr = lr
         self.epochs = epochs
         self.C = C
+        self.gamma = gamma
 
     def fit(self, X, y):
         # convert labels {0,1} → {-1,1}
         y = np.where(y == 0, -1, 1)
 
-        n, d = X.shape
-        self.w = np.zeros(d)
-        self.b = 0
+        self.X = X
+        self.y = y
 
+        n = X.shape[0]
+
+        # kernel matrix (n x n)
+        K = rbf_kernel(X, X, self.gamma)
+
+        # Q = y_i y_j K_ij
+        Q = np.outer(y, y) * K
+
+        # inizializzazione alpha
+        self.alpha = np.zeros(n)
+
+        # -----------------------------
+        # TRAINING (gradient ascent duale)
+        # -----------------------------
         for _ in range(self.epochs):
-            for i in range(n):
-                condition = y[i] * (np.dot(X[i], self.w) + self.b)
+            # gradiente: 1 - Q alpha
+            grad = 1 - Q @ self.alpha
 
-                if condition >= 1:
-                    grad_w = self.w
-                    grad_b = 0
-                else:
-                    grad_w = self.w - self.C * y[i] * X[i]
-                    grad_b = -self.C * y[i]
+            # aggiornamento
+            self.alpha += self.lr * grad
 
-                self.w -= self.lr * grad_w
-                self.b -= self.lr * grad_b
+            # vincolo: 0 ≤ alpha ≤ C
+            self.alpha = np.clip(self.alpha, 0, self.C)
+
+            # vincolo: Σ alpha_i y_i = 0
+            correction = np.dot(self.alpha, y) / np.sum(y**2)
+            self.alpha -= correction * y
+
+        # -----------------------------
+        # calcolo bias
+        # -----------------------------
+        sv = (self.alpha > 1e-5) & (self.alpha < self.C - 1e-5)
+
+        if np.any(sv):
+            i = np.where(sv)[0][0]
+            self.b = y[i] - np.sum(self.alpha * y * K[:, i])
+        else:
+            self.b = 0
+
+    def decision_function(self, X):
+        # f(x) = Σ alpha_i y_i k(x, x_i) + b
+        K = rbf_kernel(X, self.X, self.gamma)
+        return K @ (self.alpha * self.y) + self.b
 
     def predict(self, X):
-        pred = np.dot(X, self.w) + self.b
+        pred = self.decision_function(X)
         return (pred > 0).astype(int)
