@@ -8,7 +8,7 @@ def rbf_kernel(X1, X2, gamma):
     dist = sq1 + sq2 - 2 * X1 @ X2.T
     return np.exp(-gamma * dist)
 
-
+"""
 class RFF:
     def __init__(self, D, sigma=1.0):
         self.D = D
@@ -25,3 +25,4 @@ class RFF:
     def fit_transform(self, X):
         self.fit(X)
         return self.transform(X)
+"""
