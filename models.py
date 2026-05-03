@@ -1,141 +1,279 @@
 import numpy as np
 import kernels
 
-class LogisticRegression:
-    def __init__(self, lr=0.001, epochs=1000, use_rff=False, D=100, gamma=1.0):
-        self.lr = lr #learning rate 
-        self.epochs = epochs # training epochs 
-        self.use_rff = use_rff # true if we use RFF, else false
-        self.D = D # finite dimension of the space created with RFF
-        self.gamma = gamma # controls the scale of similarity and the complexity of decision boundary #TODO: need more info
 
-    def sigmoid(self, z):
-        # apply sigmoid in order to have a probability output
-        return 1 / (1 + np.exp(-z))
+class RandomFourierFeatures:
+    def __init__(self, D=100, gamma=1.0):
+        self.D = D
+        self.gamma = gamma
 
-
-    def _init_random_features(self, d):
-        #initialize weight sampling from a gaussian distribution (cause i use gaussian kernel) W sampled from N(0,2*gamma)
-        # np.sqrt(2 * self.gamma) scaling factor, np.random.randn(self.D, d) sampling from normal distribution
+    def fit(self, X):
+        d = X.shape[1]
         self.W = np.sqrt(2 * self.gamma) * np.random.randn(self.D, d)
-        # initialize bias from a uniform distribution, b sampled from (0,2pi)
-        # 2 * np.pi scaling factorm, np.random.rand(self.D) sampling from a uniform distribution
-        self.b_rf = 2 * np.pi * np.random.rand(self.D)
+        self.b = 2 * np.pi * np.random.rand(self.D)
 
-    def _transform(self, X):
-        if not self.use_rff:
-            #if don't use RFF don't transorm input
+    def transform(self, X):
+        projection = X @ self.W.T + self.b
+        return np.sqrt(2.0 / self.D) * np.cos(projection)
+
+    def fit_transform(self, X):
+        self.fit(X)
+        return self.transform(X)
+
+
+class RandomBinningFeatures:
+    def __init__(self, D=100, gamma=1.0, buckets=8):
+        self.D = D
+        self.gamma = gamma
+        self.buckets = buckets
+
+    def fit(self, X):
+        d = X.shape[1]
+
+        self.delta = np.random.exponential(scale=1.0 / self.gamma,size=(self.D, d))
+        self.delta = np.maximum(self.delta, 1e-8)
+
+        self.offset = np.random.uniform(0, self.delta)
+
+        self.hash_weights = np.random.randint(1,10_000,size=(self.D, d))
+
+    def transform(self, X):
+        n = X.shape[0]
+        Z = np.zeros((n, self.D * self.buckets))
+
+        for j in range(self.D):
+            bins = np.floor((X + self.offset[j]) / self.delta[j]).astype(int)
+            hashed = np.abs(bins @ self.hash_weights[j]) % self.buckets
+
+            rows = np.arange(n)
+            cols = j * self.buckets + hashed
+
+            Z[rows, cols] = 1.0
+
+        return Z / np.sqrt(self.D)
+
+    def fit_transform(self, X):
+        self.fit(X)
+        return self.transform(X)
+
+
+class Perceptron:
+    def __init__(self, lr=0.001, epochs=1000, feature_map="linear", D=100, gamma=1.0, buckets=32):
+        """
+        Perceptron binario from scratch.
+
+        feature_map:
+        - "linear"          -> Perceptron lineare classico
+        - "rff"             -> Perceptron con Random Fourier Features
+        - "random_binning"  -> Perceptron con Random Binning Features
+        """
+
+        self.lr = lr
+        self.epochs = epochs
+        self.feature_map = feature_map
+        self.D = D
+        self.gamma = gamma
+        self.buckets = buckets
+
+        self.mapper = None
+        self.w = None
+        self.b = None
+
+    def _init_feature_map(self, X):
+        """
+        Inizializza e applica la trasformazione scelta sul training set.
+        """
+
+        if self.feature_map == "linear":
+            self.mapper = None
             return X
 
-        # compute: W^T * X + b
-        projection = X @ self.W.T + self.b_rf
-        # compute z(x) = sqrt(2/D) * cos(W^T*x + b)
-        Z = np.sqrt(2 / self.D) * np.cos(projection)
-        return Z
+        if self.feature_map == "rff":
+            self.mapper = RandomFourierFeatures(D=self.D, gamma=self.gamma)
+            return self.mapper.fit_transform(X)
+
+        if self.feature_map == "random_binning":
+            self.mapper = RandomBinningFeatures(D=self.D, gamma=self.gamma, buckets=self.buckets)
+            return self.mapper.fit_transform(X)
+
+        raise ValueError("feature_map deve essere: 'linear', 'rff' oppure 'random_binning'")
+
+    def _transform(self, X):
+        """
+        Applica al test set la stessa trasformazione imparata sul training set.
+
+        Importante:
+        - sul training set si usa fit_transform()
+        - sul test set si usa solo transform()
+
+        Così le random features restano le stesse.
+        """
+
+        if self.mapper is None:
+            return X
+
+        return self.mapper.transform(X)
 
     def fit(self, X, y):
-        
-        # n is the number of samples, d is the number of features
-        n, d = X.shape
+        """
+        Allena il Perceptron.
 
-        # init RFF if necessary
-        if self.use_rff:
-            self._init_random_features(d)
+        Il training avviene sempre in modo lineare, ma lo spazio cambia:
 
-        # transform input (only if use_rff if True)
-        Z = self._transform(X)
-        n, d_transformed = Z.shape
+        - linear:
+            f(x) = w^T x + b
 
-        # initialize weihts and bias for the linear model
-        self.w = np.zeros(d_transformed)
-        self.b = 0
+        - rff:
+            f(x) = w^T z_RFF(x) + b
 
-        # training loop
+        - random_binning:
+            f(x) = w^T z_RB(x) + b
+        """
+
+        n_samples = X.shape[0]
+
+        X_train = self._init_feature_map(X)
+
+        n_features = X_train.shape[1]
+
+        self.w = np.zeros(n_features)
+        self.b = 0.0
+
+        y_signed = np.where(y == 0, -1, 1)
+
         for _ in range(self.epochs):
-            # compute the prediction: z = Z * W + b
-            # NOTE: Z corresponds to X if use_rff is False, otherwise Z are the inputs obtained using RFF tranformation
-            z = Z @ self.w + self.b
-            p = self.sigmoid(z)
 
-            # compute gradient: 1/n * Z^{T}(p - y)
-            # p is the predicted probability, y is the true label, p - y corresponds to the error vector
-            # in this way i compute how much each feature contribute to the error
-            grad_w = Z.T @ (p - y) / n
-            # average error across al samples
-            grad_b = np.mean(p - y)
+            indices = np.random.permutation(n_samples)
 
-            # update rule for the weights
-            self.w -= self.lr * grad_w
-            # update rule for the bias
-            self.b -= self.lr * grad_b
+            for i in indices:
 
-    # ------------------ PREDICT ------------------
-    def predict(self, X):
-        Z = self._transform(X)
-        # threshold: if the probability is greater than 0.5 the output is 1, otherwise is 0.
-        return (self.sigmoid(Z @ self.w + self.b) > 0.5).astype(int)
-    
+                score = X_train[i] @ self.w + self.b
 
-#TODO: fix this, got 0% accuracy, there is some problem, maybe implement a differnte "version" of SVM with rbf
-class KernelSVM:
-    def __init__(self, lr=0.001, epochs=1000, C=1.0, gamma=1.0):
-        self.lr = lr # learning rate
-        self.epochs = epochs # epochs in traning
-        # balance the trade off between maximize the margin and minimize classification error
-        # objectivde function: min 1/2*(||w||)^2 + C sum(slack_variables)
-        self.C = C 
-        self.gamma = gamma # parameter of the gaussian kernel
+                margin = y_signed[i] * score
 
-    def fit(self, X, y):
-        # SVM assume lables in {-1,1}
-        y = np.where(y == 0, -1, 1)
+                if margin <= 0:
+                    self.w += self.lr * y_signed[i] * X_train[i]
+                    self.b += self.lr * y_signed[i]
 
-        self.X = X
-        self.y = y
-
-        # get number of sampeles
-        n = X.shape[0]
-
-        # compute Gnam Matrix, so matrix n x n, with all entries K = K(x_i,x_j)
-        #NOTE: doesn't scale with dataset size, O(n^2), need lot of storage memory
-        K = kernels.rbf_kernel(X, X, self.gamma) 
-
-
-        # compute this matrix for SVM dual objective
-        # dual objective function: max_a = sum(a_i) - 1/2 * sum(a_i * a_j * Q), where Q = y_i * y_i * K(x_i,x_j)
-        Q = np.outer(y, y) * K
-        # init alpha
-        self.alpha = np.zeros(n)
-
-        # training loop
-        for _ in range(self.epochs):
-            # gradiente: 1 - Q alpha
-            grad = 1 - Q @ self.alpha
-
-            # aggiornamento
-            self.alpha += self.lr * grad
-
-            # vincolo: 0 ≤ alpha ≤ C
-            self.alpha = np.clip(self.alpha, 0, self.C)
-
-            # vincolo: Σ alpha_i y_i = 0
-            correction = np.dot(self.alpha, y) / np.sum(y**2)
-            self.alpha -= correction * y
-
-
-        sv = (self.alpha > 1e-5) & (self.alpha < self.C - 1e-5)
-
-        if np.any(sv):
-            i = np.where(sv)[0][0]
-            self.b = y[i] - np.sum(self.alpha * y * K[:, i])
-        else:
-            self.b = 0
+        return self
 
     def decision_function(self, X):
-        # f(x) = Σ alpha_i y_i k(x, x_i) + b
-        K = kernels.rbf_kernel(X, self.X, self.gamma)
-        return K @ (self.alpha * self.y) + self.b
+        """
+        Calcola lo score del modello:
+
+            f(x) = w^T phi(x) + b
+
+        dove phi(x) può essere:
+        - identità
+        - Random Fourier Features
+        - Random Binning Features
+        """
+
+        X_transformed = self._transform(X)
+        return X_transformed @ self.w + self.b
 
     def predict(self, X):
-        pred = self.decision_function(X)
-        return (pred > 0).astype(int)
+        """
+        Predice label in formato {0, 1}.
+        """
+
+        scores = self.decision_function(X)
+        return np.where(scores >= 0, 1, 0)
+
+
+class KernelSVM:
+    def __init__(self, lr=0.001, epochs=1000, C=1.0, gamma=1.0, kernel="rbf"):
+        """
+        SVM kernelizzata from scratch usando il problema duale.
+
+        kernel:
+        - "rbf"     -> K(x, z) = exp(-gamma * ||x - z||^2)
+        - "laplace" -> K(x, z) = exp(-gamma * ||x - z||_1)
+        """
+
+        self.lr = lr
+        self.epochs = epochs
+        self.C = C
+        self.gamma = gamma
+        self.kernel = kernel
+
+        self.alpha = None
+        self.b = 0.0
+        self.X_train = None
+        self.y_train = None
+
+    def _kernel_function(self, X1, X2):
+        """
+        Calcola la matrice kernel tra X1 e X2.
+        """
+
+        if self.kernel == "rbf":
+            return kernels.rbf_kernel(X1, X2, gamma=self.gamma)
+
+        if self.kernel == "laplace":
+            return kernels.laplace_kernel(X1, X2, gamma=self.gamma)
+
+        raise ValueError("kernel deve essere 'rbf' oppure 'laplace'")
+
+    def fit(self, X, y):
+        """
+        Allena la SVM kernelizzata.
+        """
+
+        n_samples = X.shape[0]
+
+        y_signed = np.where(y == 0, -1, 1)
+
+        self.X_train = X
+        self.y_train = y_signed
+
+        K = self._kernel_function(X, X)
+
+        Q = np.outer(y_signed, y_signed) * K
+
+        self.alpha = np.zeros(n_samples)
+
+        for _ in range(self.epochs):
+
+            grad = 1 - Q @ self.alpha
+
+            self.alpha += self.lr * grad
+
+            self.alpha = np.clip(self.alpha, 0, self.C)
+
+            correction = np.dot(self.alpha, y_signed) / np.sum(y_signed ** 2)
+            self.alpha -= correction * y_signed
+
+            self.alpha = np.clip(self.alpha, 0, self.C)
+
+        support_vector_mask = (self.alpha > 1e-5) & (self.alpha < self.C - 1e-5)
+
+        if np.any(support_vector_mask):
+            support_indices = np.where(support_vector_mask)[0]
+            b_values = []
+
+            for i in support_indices:
+                decision_without_b = np.sum(self.alpha * y_signed * K[:, i])
+                b_values.append(y_signed[i] - decision_without_b)
+
+            self.b = np.mean(b_values)
+        else:
+            self.b = 0.0
+
+        return self
+
+    def decision_function(self, X):
+        """
+        f(x) = sum_i alpha_i y_i K(x_i, x) + b
+        """
+
+        K = self._kernel_function(X, self.X_train)
+        return K @ (self.alpha * self.y_train) + self.b
+
+    def predict(self, X):
+        """
+        Predice label in formato {0, 1}.
+        """
+
+        scores = self.decision_function(X)
+        return np.where(scores >= 0, 1, 0)

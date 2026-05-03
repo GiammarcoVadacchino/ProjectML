@@ -1,123 +1,107 @@
+
+from sklearn.datasets import make_moons
+from train import *
+from utils import *
 import numpy as np
-import matplotlib.pyplot as plt
-import time
-import dataset 
-import models
-import kernels
-from sklearn.datasets import fetch_covtype
+from plot import *
 
 
+SEED = 42
+np.random.seed(SEED)
 
-def accuracy(y_true, y_pred):
-    return np.mean(y_true == y_pred)
 
-def run_experiment(D_values):
-    data = fetch_covtype()
-    X, y = data.data, data.target 
+def main():
+
+    sizes = [500, 1000, 2000, 4000, 8000, 15000]
+
+    #TODO: whene i finshed the pipeline with synthetic dataset, rerune the pipeline with real world data
+    #NOTE: 5k samples for exps
+    X, y = make_moons(n_samples=5000,noise=0.8,random_state=SEED)
+
+    X_train, X_test, y_train, y_test = train_test_split(X,y,test_size=0.3,seed=SEED)
+
+    X_train, X_test = standardize(X_train, X_test)
+
+    D_rff_values = [25, 50, 100, 250, 500, 1000, 2000]
+    D_binning_values = [10, 25, 50, 100, 250, 500] #NOTE: explain this
+    gamma_values = np.logspace(-2, 1, 6) # need to be tuned
+    C_values = np.logspace(-2, 2, 6) # need to be tuned
+
+    #RUN PERCEPTRON LINEAR save train error, test error, accuracy, time
+
+    p_linear_results = train_evaluate_perceptron(X_train,y_train,X_test,y_test,best_gamma=None,feature_map_name="linear",D_values=None)
+    print("\n===== PERCEPTRON LINEARE =====")
+    print_stats(p_linear_results)
+
+
+    #RUN SVM RBF (5-fold-cv) save train error, test error, accuracy, time and gamma values
+    svm_rbf_results = train_evaluate_svm(X_train,y_train,X_test,y_test,C_values,gamma_values, kernel = "rbf")
+    print_stats(svm_rbf_results)
+
+    #RUN SVM LAPLACE (5-fold-cv) save train error, test error, accuracy, time and gamma values
+    svm_laplace_results = train_evaluate_svm(X_train,y_train,X_test,y_test,C_values,gamma_values, kernel = "laplace")
+    print_stats(svm_laplace_results)
+
+
+    best_gamma_rbf = svm_rbf_results["rbf"][3] #NOTE: best gamma founed in CV with rbf kernel has to be used in perceptron with RFF
+    best_gamma_laplace = svm_laplace_results["laplace"][3] #NOTE: best gamma founed in CV with laplace kernel has to be used in perceptron with random binning features
+
+
+    #RUN PERCEPTRON RFF save train error, test error, accuracy, time and D values
+    p_rff_results = train_evaluate_perceptron(X_train,y_train,X_test,y_test,best_gamma_rbf,"rff",D_rff_values)
+    print("\n===== PERCEPTRON RFF =====")
+    print_stats(p_rff_results)
+
+    #RUN PERCEPTRON BINNING, save train error, test error, accuracy, time and D values
+    p_random_binning_results = train_evaluate_perceptron(X_train,y_train,X_test,y_test,best_gamma_laplace,"random_binning",D_binning_values)
+    print("\n===== PERCEPTRON RANDOM BINNING =====")
+    print_stats(p_random_binning_results)
+
+
+    #PLOTS and STORE
+
+
+    #Insight into representation vs computation trade-offs
+    #TODO: plot test error vs number of features (for rff)
+    #TODO: plot test error vs number of features (for binning)
+    plot_test_error_vs_features(p_rff_results, label = "Perceptron RFF",save_path='plots/test_error_vs_features_rff')
+    plot_test_error_vs_features(p_random_binning_results, label = "Perceptron RB",save_path='plots/test_error_vs_features_rb')
+
+    
+
+    #Evidence that random features approximate kernel performance, Comparison between linear, approximate kernel, and exact kernel models, Compare different feature map constructions
+    #TODO: comparison with exact kernel method, (comparison between, train/test error, of svm_rbf, perceptron, percetron rff)
+    plot_kernel_comparison(svm_rbf_results,p_linear_results,p_rff_results,kernel="rbf",save_path="plots/kernel_compariso_rbf_rff")
+    #TODO: comparison with exact kernel method, (comparison between, train/test error, of svm_laplace, perceptron, percetron binning)
+    plot_kernel_comparison(svm_laplace_results,p_linear_results,p_random_binning_results,kernel="laplace",approx_label="RB",save_path="plots/kernel_compariso_laplace_rb")
+
+
+    #Analyze runtime vs accuracy trade-off
+    #TODO: plot runtime vs accuracy (x training time, y acc) NO CV (all models so 5 lines) 2 subplots, one with training and one with test error
+    plot_runtime_vs_accuracy(svm_rbf_results,p_linear_results,p_rff_results,kernel="rbf",save_path="plots/runtime_vs_accuracy_rbf_rff")
+     #TODO: plot runtime vs accuracy (x total time, y acc) WITH CV (all models so 5 lines)
+    plot_runtime_vs_accuracy(svm_laplace_results,p_linear_results,p_random_binning_results,kernel="laplace",approx_label="RB",save_path="plots/runtime_vs_accuracy_laplace_rb")
+   
+
+    #Scalabily of perceptron with featrues maps w.r.t SVM 
+    #TODO: plot runtime vs dataset size (prove scalability of features transformations)
 
     """
-
-    500K samples: 
-
-    - Linear model: acc = 0.309  time = 26s
-    - SVM rbf kernel: acc = 0.364 time = 689s
-    - Linear model with RFF: 
-        - D = 10: acc = 0.364??  time = 6s
-        - D = 50: acc = ??  time = 26s
-        - D = 100: acc = ??  time = 42s
-        - D = 500: acc = ??  time = 280s
-        - D = 1000: acc = ??  time = 887s
-
-
-    400K samples:
-
-    - Linear model: acc = 0.309  time = 13s
-    - SVM rbf kernel: acc = 0.364 time = 439s
-    - Linear model with RFF: 
-        - D = 10: acc = 0.364??  time = 4s
-        - D = 50: acc = ??  time = 16s
-        - D = 100: acc = ??  time = 31s
-        - D = 500: acc = ??  time = 146s
-        - D = 1000: acc = ??  time = 271s
-    
+    asse x = dataset size (n)
+    asse y = training time
+    curve:
+    SVM rbf
+    SVM laplace
+    Perceptron + RFF
+    Perceptron + RB
     """
 
-    idx = np.random.choice(len(X),10_000, replace=False)
-    X, y = X[idx], y[idx]
-    
-    print(f"Input size: {X.shape}\n Output size: {y.shape}") 
-    print(f"X : {X}\n y: {y}") 
-    X_train, X_test, y_train, y_test = dataset.train_test_split(X, y)
-    X_train, X_test = dataset.standardize(X_train, X_test)
-
-    t0 = time.time()
-    lin = models.LogisticRegression()
-    lin.fit(X_train, y_train)
-    t1 = time.time()
-
-    lin_acc = accuracy(y_test, lin.predict(X_test))
-    print("Linear:", lin_acc, "time:", t1-t0)
-
-    t0 = time.time()
-    ker = models.KernelSVM()
-    ker.fit(X_train, y_train)
-    t1 = time.time()
-
-    ker_acc = accuracy(y_test, ker.predict(X_test))
-    print("Kernel:", ker_acc, "time:", t1-t0)
-
-    results = []
-
-    for dimension in D_values:
-        t0 = time.time()
-
-        #rff = kernels.RFF(D)
-        #Z_train = rff.fit_transform(X_train)
-        #Z_test = rff.transform(X_test)
-
-        model = models.LogisticRegression(use_rff=True, D=dimension)
-        model.fit(X_train, y_train)
-
-        t1 = time.time()
-
-        acc = accuracy(y_test, model.predict(X_test))
-
-        results.append((dimension, acc, t1-t0))
-        print("RFF D=", dimension, "acc=", acc, "time=", t1-t0)
-
-    return results, lin_acc, ker_acc
-
-
-
-def plot_results(results, lin_acc, ker_acc):
-    D = [r[0] for r in results]
-    acc = [r[1] for r in results]
-    time_vals = [r[2] for r in results]
-
-    plt.figure()
-    plt.plot(D, acc, marker='o', label="RFF")
-    plt.axhline(lin_acc, linestyle="--", label="Linear")
-    plt.axhline(ker_acc, linestyle="--", label="Kernel")
-
-    plt.xscale("log")
-    plt.xlabel("D")
-    plt.ylabel("Accuracy")
-    plt.legend()
-    plt.title("Accuracy vs Random Features")
-    plt.show()
-
-    plt.figure()
-    plt.plot(D, time_vals, marker='o')
-    plt.xscale("log")
-    plt.xlabel("D")
-    plt.ylabel("Time")
-    plt.title("Runtime vs D")
-    plt.show()
-
+    #Study effect of kernel bandwidth
+    #TODO: plot SVM rbf and perceptron with RFF (x = gamma (log scale), y = train/test error)
+    gammas = np.logspace(-3, 1, 8)
+    study_kernel_bandwidth(X_train, y_train, X_test, y_test,gammas,D=200,svm_kernel="rbf",save_path="plots/bandwidth_rbf.png")
+    study_kernel_bandwidth(X_train, y_train, X_test, y_test,gammas,D=200,svm_kernel="laplace",save_path="plots/bandwidth_laplace.png")
 
 
 if __name__ == "__main__":
-    D_values = [10, 50, 100, 500, 1000]
-
-    results, lin_acc, ker_acc = run_experiment(D_values)
-    plot_results(results, lin_acc, ker_acc)
+    main()
