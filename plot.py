@@ -4,55 +4,69 @@ from models import KernelSVM, Perceptron
 from utils import error_rate
 
 
-def plot_test_error_vs_features(results, label="Perceptron + RFF", save_path=None):
-    
-    D_values = sorted(results.keys())
-    test_errors = [results[D][1] for D in D_values]
+def plot_test_error_vs_features(results_mean, label="RFF", save_path=None):
+
+    D_values = sorted(results_mean.keys())
+
+    means = np.array([results_mean[D][1] for D in D_values])
 
     plt.figure(figsize=(8, 5))
-    plt.plot(D_values, test_errors, marker="o", label=label)
+    plt.plot(D_values, means, marker="o", label=label)
+
+
+    #Annotations
+    for x, m, in zip(D_values, means):
+        plt.annotate(f"{m:.3f}", 
+                     (x, m),
+                     textcoords="offset points",
+                     xytext=(0, 6),
+                     ha='center',
+                     fontsize=8)
 
     plt.xlabel("Number of features (D)")
     plt.ylabel("Test error")
     plt.title("Test error vs number of features")
+
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
 
-    if save_path is not None:
+    if save_path:
         plt.savefig(save_path, dpi=300)
 
-    plt.show()
+    #plt.show()
 
 
 def plot_kernel_comparison(results_kernel, results_linear, results_approx, kernel,
                            approx_label="RFF",
                            save_path=None):
 
-    # -------- Approx (RFF / Binning) --------
     D_values = sorted(results_approx.keys())
 
     approx_train = [results_approx[D][0] for D in D_values]
     approx_test = [results_approx[D][1] for D in D_values]
 
-    # -------- Kernel (SVM) --------
     kernel_train = results_kernel[kernel][1]
     kernel_test = results_kernel[kernel][2]
 
-    # -------- Linear (Perceptron) --------
     linear_train = results_linear["linear"][0]
     linear_test = results_linear["linear"][1]
 
-    # posizione x per punti fissi
     x_pos = sum(D_values) / len(D_values)
 
-    # -------- Plot --------
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True)
 
-    # ===== LEFT: TEST ERROR =====
     axes[0].plot(D_values, approx_test, marker="o", label=f"Perceptron + {approx_label}")
+
+    for x, y in zip(D_values, approx_test):
+        axes[0].annotate(f"{y:.3f}", (x, y), textcoords="offset points", xytext=(0, 6), ha="center", fontsize=8)
+
+
     axes[0].scatter(x_pos, kernel_test, marker="x", s=100, label="SVM (exact kernel)")
     axes[0].scatter(x_pos, linear_test, marker="s", label="Perceptron (linear)")
+
+    axes[0].annotate(f"{kernel_test:.3f}", (x_pos, kernel_test), textcoords="offset points", xytext=(8, 8), fontsize=8)
+    axes[0].annotate(f"{linear_test:.3f}", (x_pos, linear_test), textcoords="offset points", xytext=(8, -12), fontsize=8)
 
     axes[0].set_title("Test error")
     axes[0].set_xlabel("Number of features (D)")
@@ -60,10 +74,17 @@ def plot_kernel_comparison(results_kernel, results_linear, results_approx, kerne
     axes[0].grid(True, alpha=0.3)
     axes[0].legend()
 
-    # ===== RIGHT: TRAIN ERROR =====
     axes[1].plot(D_values, approx_train, marker="o", label=f"Perceptron + {approx_label}")
+
+    for x, y in zip(D_values, approx_train):
+        axes[1].annotate(f"{y:.3f}", (x, y), textcoords="offset points", xytext=(0, 6), ha="center", fontsize=8)
+
+
     axes[1].scatter(x_pos, kernel_train, marker="x", s=100, label="SVM (exact kernel)")
     axes[1].scatter(x_pos, linear_train, marker="s", label="Perceptron (linear)")
+
+    axes[1].annotate(f"{kernel_train:.3f}", (x_pos, kernel_train), textcoords="offset points", xytext=(8, 8), fontsize=8)
+    axes[1].annotate(f"{linear_train:.3f}", (x_pos, linear_train), textcoords="offset points", xytext=(8, -12), fontsize=8)
 
     axes[1].set_title("Train error")
     axes[1].set_xlabel("Number of features (D)")
@@ -73,42 +94,50 @@ def plot_kernel_comparison(results_kernel, results_linear, results_approx, kerne
     plt.suptitle("Kernel approximation comparison")
     plt.tight_layout()
 
-    # -------- Save --------
     if save_path is not None:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
-    plt.show()
-
+    #plt.show()
 
 def plot_runtime_vs_accuracy(results_kernel, results_linear, results_approx, kernel,
                              approx_label="RFF", save_path=None):
 
-    # -------- Approx (RFF / Binning) --------
     D_values = sorted(results_approx.keys())
 
-    times = [results_approx[D][3] for D in D_values]
-    accs = [results_approx[D][2] for D in D_values]
+    times = np.array([results_approx[D][3] for D in D_values])
+    accs = np.array([results_approx[D][2] for D in D_values])
 
-    # -------- Kernel --------
+    idx = np.argsort(times)
+    times, accs, D_values = times[idx], accs[idx], np.array(D_values)[idx]
+
+
     kernel_time = results_kernel[kernel][3]
     kernel_acc = results_kernel[kernel][5]
     kernel_total_time = results_kernel[kernel][4]
 
-    # -------- Linear --------
+
     linear_time = results_linear["linear"][3]
     linear_acc = results_linear["linear"][2]
 
-    # -------- Plot --------
     plt.figure(figsize=(8, 5))
 
-    # curva trade-off
-    plt.plot(times, accs, marker="o", label=f"Perceptron + {approx_label}")
 
-    # punti fissi
-    plt.scatter(kernel_time, kernel_acc, marker="x", s=100, label="SVM (exact kernel)")
-    plt.scatter(linear_time, linear_acc, marker="s", label="Perceptron (linear)")
-    plt.scatter(kernel_total_time, kernel_acc, marker="*", s=150, label="SVM (+CV)")
+    sc = plt.scatter(times, accs, c=D_values, cmap="viridis", s=80, label=f"Perceptron + {approx_label}")
+    plt.colorbar(sc, label="D (features)")
 
+
+    for t, a in zip(times, accs):
+        plt.annotate(f"{a:.3f}", (t, a), textcoords="offset points", xytext=(6, 6), ha="left", fontsize=8, alpha=0.8)
+
+
+    plt.scatter(kernel_time, kernel_acc, color="red", marker="x", s=120, label="SVM (exact)")
+    plt.scatter(linear_time, linear_acc, color="orange", marker="s", s=100, label="Linear")
+    plt.scatter(kernel_total_time, kernel_acc, color="green", marker="*", s=180, label="SVM (+CV)")
+
+
+    plt.annotate(f"{kernel_acc:.3f}", (kernel_time, kernel_acc), textcoords="offset points", xytext=(6, 6), fontsize=8)
+    plt.annotate(f"{linear_acc:.3f}", (linear_time, linear_acc), textcoords="offset points", xytext=(6, -10), fontsize=8)
+    plt.annotate(f"{kernel_acc:.3f}", (kernel_total_time, kernel_acc), textcoords="offset points", xytext=(6, 6), fontsize=8)
 
     plt.xlabel("Training time")
     plt.ylabel("Accuracy")
@@ -117,12 +146,11 @@ def plot_runtime_vs_accuracy(results_kernel, results_linear, results_approx, ker
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
-    plt.xscale("log")
 
-    if save_path is not None:
+    if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
-    plt.show()
+    #plt.show()
 
 
 def study_kernel_bandwidth(X_train, y_train, X_test, y_test, gammas, D=200, buckets=32, lr=0.001, epochs=1000, C=1.0, svm_kernel="rbf", save_path=None):
@@ -135,31 +163,31 @@ def study_kernel_bandwidth(X_train, y_train, X_test, y_test, gammas, D=200, buck
 
     for gamma in gammas:
 
-        # -------- SVM --------
+        #SVM
         svm = KernelSVM(lr=lr, epochs=epochs, C=C, gamma=gamma, kernel=svm_kernel)
         svm.fit(X_train, y_train)
 
         results["svm"]["train_err"].append(error_rate(y_train, svm.predict(X_train)))
         results["svm"]["test_err"].append(error_rate(y_test, svm.predict(X_test)))
 
-        # -------- Perceptron + RFF --------
+        #Perceptron + RFF
         perc_rff = Perceptron(lr=lr, epochs=epochs, feature_map="rff", D=D, gamma=gamma)
         perc_rff.fit(X_train, y_train)
 
         results["rff"]["train_err"].append(error_rate(y_train, perc_rff.predict(X_train)))
         results["rff"]["test_err"].append(error_rate(y_test, perc_rff.predict(X_test)))
 
-        # -------- Perceptron + RB --------
+        #Perceptron + RB
         perc_rb = Perceptron(lr=lr, epochs=epochs, feature_map="random_binning", D=D, gamma=gamma, buckets=buckets)
         perc_rb.fit(X_train, y_train)
 
         results["rb"]["train_err"].append(error_rate(y_train, perc_rb.predict(X_train)))
         results["rb"]["test_err"].append(error_rate(y_test, perc_rb.predict(X_test)))
 
-    # -------- Plot --------
+    #Plot
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True)
 
-    # TEST
+    #Test
     axes[0].plot(gammas, results["svm"]["test_err"], marker="o", label=f"SVM {svm_kernel}")
     axes[0].plot(gammas, results["rff"]["test_err"], marker="s", label=f"Perceptron + RFF (D={D})")
     axes[0].plot(gammas, results["rb"]["test_err"], marker="^", label=f"Perceptron + RB (D={D})")
@@ -169,7 +197,7 @@ def study_kernel_bandwidth(X_train, y_train, X_test, y_test, gammas, D=200, buck
     axes[0].grid(True, alpha=0.3)
     axes[0].legend()
 
-    # TRAIN
+    #Train
     axes[1].plot(gammas, results["svm"]["train_err"], marker="o", label=f"SVM {svm_kernel}")
     axes[1].plot(gammas, results["rff"]["train_err"], marker="s", label=f"Perceptron + RFF (D={D})")
     axes[1].plot(gammas, results["rb"]["train_err"], marker="^", label=f"Perceptron + RB (D={D})")
@@ -187,4 +215,42 @@ def study_kernel_bandwidth(X_train, y_train, X_test, y_test, gammas, D=200, buck
     if save_path is not None:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
 
-    plt.show()
+    #plt.show()
+
+
+def plot_scalability_results(scalability_results, save_path=None):
+
+    sizes = scalability_results["size"]
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    axes[0].plot(sizes, scalability_results["svm_rbf_time"], marker="o", label="SVM RBF")
+    axes[0].plot(sizes, scalability_results["svm_laplace_time"], marker="o", label="SVM Laplace")
+    axes[0].plot(sizes, scalability_results["perceptron_rff_time"], marker="o", label="Perceptron + RFF")
+    axes[0].plot(sizes, scalability_results["perceptron_rb_time"], marker="o", label="Perceptron + RB")
+
+    axes[0].set_xlabel("Dataset size")
+    axes[0].set_ylabel("Training time")
+    axes[0].set_title("Scalability (Time)")
+    axes[0].set_yscale("log")
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
+
+
+    axes[1].plot(sizes, scalability_results["svm_rbf_acc"], marker="o", label="SVM RBF")
+    axes[1].plot(sizes, scalability_results["svm_laplace_acc"], marker="o", label="SVM Laplace")
+    axes[1].plot(sizes, scalability_results["perceptron_rff_acc"], marker="o", label="Perceptron + RFF")
+    axes[1].plot(sizes, scalability_results["perceptron_rb_acc"], marker="o", label="Perceptron + RB")
+
+    axes[1].set_xlabel("Dataset size")
+    axes[1].set_ylabel("Accuracy")
+    axes[1].set_title("Scalability (Accuracy)")
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+
+    plt.tight_layout()
+
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
+    #plt.show()
