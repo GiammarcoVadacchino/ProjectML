@@ -40,8 +40,8 @@ def main():
 
     D_rff_values = [25, 50, 100, 250, 500, 1000, 2000, 5000, 10000, 20000] # d values for RFF
     D_binning_values = [10, 25, 50, 100, 250, 500, 1000, 2000] # da values for RB (the matrix is then d * buckets, this explain the fact that i use smaller values of d)
-    gamma_values = np.logspace(-2, 1, 6) 
-    C_values = np.logspace(-2, 2, 6)
+    gamma_values = np.logspace(-2, 1, 6) #params used in CV
+    C_values = np.logspace(-2, 2, 6) #params used in CV
 
 
     #run linear perceptron
