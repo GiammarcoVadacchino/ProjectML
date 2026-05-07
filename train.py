@@ -84,17 +84,17 @@ def train_evaluate_perceptron(X_train,y_train,X_test,y_test,best_gamma, feature_
 
         p_linear = models.Perceptron()
 
-        # training
+        #training
         start_train = time.perf_counter()
         p_linear.fit(X_train, y_train)
         end_train = time.perf_counter()
         training_time = end_train - start_train
 
-        # predizioni
+        #predictions
         y_train_pred = p_linear.predict(X_train)
         y_test_pred = p_linear.predict(X_test)
 
-        # metriche
+        #metrics
         p_train_error = error_rate(y_train, y_train_pred)
         p_test_error = error_rate(y_test, y_test_pred)
         p_acc = accuracy(y_test, y_test_pred)
@@ -106,19 +106,19 @@ def train_evaluate_perceptron(X_train,y_train,X_test,y_test,best_gamma, feature_
     for d in D_values:
         p_rff = models.Perceptron(D = d, feature_map=feature_map_name, gamma=best_gamma)
 
-        # training
+        #training
         start_train = time.perf_counter()
         p_rff.fit(X_train, y_train)
         end_train = time.perf_counter()
         training_time = end_train - start_train
 
-        # predizioni
+        #predictions
         y_train_pred = p_rff.predict(X_train)
         y_test_pred = p_rff.predict(X_test)
 
         
 
-        # metriche
+        #metrics
         p_train_error = error_rate(y_train, y_train_pred)
         p_test_error = error_rate(y_test, y_test_pred)
         p_acc = accuracy(y_test, y_test_pred)
